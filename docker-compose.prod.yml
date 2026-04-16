@@ -1,0 +1,25 @@
+services:
+  transcribeya:
+    build:
+      context: .
+      args:
+        WHISPER_MODEL: small
+    container_name: transcribeya
+    volumes:
+      - ./uploads:/app/uploads
+      - ./outputs:/app/outputs
+    environment:
+      - WHISPER_MODEL=small
+      - MAX_FILE_SIZE_MB=500
+      - FREE_MINUTES_LIMIT=30
+    restart: always
+    networks:
+      - transcribe-network
+      - npm-network
+
+networks:
+  transcribe-network:
+    driver: bridge
+  npm-network:
+    external: true
+    name: nginx-proxy-manager_default
