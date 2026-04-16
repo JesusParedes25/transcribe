@@ -146,7 +146,6 @@ def transcribe_audio(job_id: str, filepath: str, language: str, output_format: s
         if language != "auto":
             transcribe_opts["language"] = language
 
-        # Callback de progreso usando los segmentos
         result = model.transcribe(filepath, **transcribe_opts)
 
         detected_lang = result.get("language", language)
@@ -246,30 +245,25 @@ async def upload_audio(
     output_format: str = Form("all"),
 ):
     """Sube un archivo de audio y comienza la transcripción."""
-    # Validar extensión
     ext = Path(file.filename).suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(400, f"Formato no soportado: {ext}. Usa: {', '.join(ALLOWED_EXTENSIONS)}")
 
-    # Generar ID único
     job_id = str(uuid.uuid4())[:8]
 
-    # Guardar archivo
     upload_path = UPLOAD_DIR / f"{job_id}{ext}"
     total_size = 0
     with open(upload_path, "wb") as f:
-        while chunk := await file.read(1024 * 1024):  # 1MB chunks
+        while chunk := await file.read(1024 * 1024):
             total_size += len(chunk)
             if total_size > MAX_FILE_SIZE_BYTES:
                 upload_path.unlink(missing_ok=True)
                 raise HTTPException(413, f"Archivo demasiado grande. Máximo: {MAX_FILE_SIZE_MB}MB")
             f.write(chunk)
 
-    # Obtener duración
     duration = get_audio_duration(str(upload_path))
     duration_minutes = duration / 60
 
-    # Registrar job
     jobs[job_id] = {
         "id": job_id,
         "status": "queued",
@@ -287,7 +281,6 @@ async def upload_audio(
         "is_free": duration_minutes <= FREE_MINUTES_LIMIT,
     }
 
-    # Lanzar transcripción en background
     import threading
     thread = threading.Thread(
         target=transcribe_audio,
@@ -357,27 +350,27 @@ async def health():
 
 
 # ---------------------------------------------------------------------------
-# Frontend (HTML embebido)
+# Frontend (HTML embebido) — Emojis como entidades HTML para evitar surrogates
 # ---------------------------------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
 async def index():
-    return FRONTEND_HTML
+    html = _build_frontend_html()
+    return HTMLResponse(content=html)
 
 
-# ---------------------------------------------------------------------------
-# HTML / CSS / JS del frontend
-# ---------------------------------------------------------------------------
-FRONTEND_HTML = """
-<!DOCTYPE html>
+def _build_frontend_html() -> str:
+    model_label = MODEL_SIZE.capitalize()
+    max_size = str(MAX_FILE_SIZE_MB)
+    return f"""<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TranscribeYA — Transcripción de Audio Inteligente</title>
+<title>TranscribeYA &#8212; Transcripci&#243;n de Audio Inteligente</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,500;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 <style>
-:root {
+:root {{
     --bg: #0a0a0f;
     --bg-card: #12121a;
     --bg-card-hover: #1a1a26;
@@ -398,19 +391,19 @@ FRONTEND_HTML = """
     --radius-sm: 8px;
     --font: 'DM Sans', sans-serif;
     --mono: 'JetBrains Mono', monospace;
-}
+}}
 
-* { margin: 0; padding: 0; box-sizing: border-box; }
+* {{ margin: 0; padding: 0; box-sizing: border-box; }}
 
-body {
+body {{
     font-family: var(--font);
     background: var(--bg);
     color: var(--text);
     min-height: 100vh;
     line-height: 1.6;
-}
+}}
 
-body::before {
+body::before {{
     content: '';
     position: fixed;
     inset: 0;
@@ -419,24 +412,23 @@ body::before {
         radial-gradient(ellipse at 80% 100%, rgba(139, 92, 246, 0.06) 0%, transparent 50%);
     pointer-events: none;
     z-index: 0;
-}
+}}
 
-.container {
+.container {{
     max-width: 780px;
     margin: 0 auto;
     padding: 2rem 1.5rem 4rem;
     position: relative;
     z-index: 1;
-}
+}}
 
-/* --- Header --- */
-header {
+header {{
     text-align: center;
     margin-bottom: 3rem;
     padding-top: 1.5rem;
-}
+}}
 
-header h1 {
+header h1 {{
     font-size: 2.4rem;
     font-weight: 700;
     letter-spacing: -0.03em;
@@ -444,36 +436,34 @@ header h1 {
     background: linear-gradient(135deg, #e4e4eb 40%, #6366f1 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
-}
+}}
 
-header p {
+header p {{
     color: var(--text-muted);
     font-size: 1.05rem;
     font-weight: 300;
-}
+}}
 
-/* --- Cards --- */
-.card {
+.card {{
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: 2rem;
     margin-bottom: 1.5rem;
     transition: border-color 0.2s;
-}
-.card:hover { border-color: #3a3a50; }
+}}
+.card:hover {{ border-color: #3a3a50; }}
 
-.card-title {
+.card-title {{
     font-size: 0.8rem;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.1em;
     color: var(--text-muted);
     margin-bottom: 1.2rem;
-}
+}}
 
-/* --- Upload zone --- */
-.upload-zone {
+.upload-zone {{
     border: 2px dashed var(--border);
     border-radius: var(--radius);
     padding: 3rem 2rem;
@@ -482,51 +472,50 @@ header p {
     transition: all 0.25s;
     position: relative;
     overflow: hidden;
-}
-.upload-zone:hover, .upload-zone.dragover {
+}}
+.upload-zone:hover, .upload-zone.dragover {{
     border-color: var(--accent);
     background: rgba(99, 102, 241, 0.04);
-}
-.upload-zone.has-file {
+}}
+.upload-zone.has-file {{
     border-color: var(--green);
     border-style: solid;
     background: var(--green-glow);
-}
-.upload-zone input[type="file"] {
+}}
+.upload-zone input[type="file"] {{
     position: absolute;
     inset: 0;
     opacity: 0;
     cursor: pointer;
-}
+}}
 
-.upload-icon {
+.upload-icon {{
     font-size: 2.5rem;
     margin-bottom: 0.8rem;
     opacity: 0.7;
-}
-.upload-zone p { color: var(--text-muted); font-size: 0.95rem; }
-.upload-zone .filename {
+}}
+.upload-zone p {{ color: var(--text-muted); font-size: 0.95rem; }}
+.upload-zone .filename {{
     font-family: var(--mono);
     font-size: 0.85rem;
     color: var(--green);
     margin-top: 0.5rem;
     word-break: break-all;
-}
-.upload-zone .fileinfo {
+}}
+.upload-zone .fileinfo {{
     font-size: 0.8rem;
     color: var(--text-dim);
     margin-top: 0.25rem;
-}
+}}
 
-/* --- Options --- */
-.options-row {
+.options-row {{
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 1rem;
     margin-top: 1rem;
-}
+}}
 
-label.option-label {
+label.option-label {{
     font-size: 0.78rem;
     font-weight: 500;
     color: var(--text-muted);
@@ -534,9 +523,9 @@ label.option-label {
     letter-spacing: 0.06em;
     display: block;
     margin-bottom: 0.4rem;
-}
+}}
 
-select {
+select {{
     width: 100%;
     padding: 0.65rem 0.9rem;
     background: var(--bg-input);
@@ -551,15 +540,14 @@ select {
     background-position: right 0.8rem center;
     cursor: pointer;
     transition: border-color 0.2s;
-}
-select:focus {
+}}
+select:focus {{
     outline: none;
     border-color: var(--accent);
     box-shadow: 0 0 0 3px var(--accent-glow);
-}
+}}
 
-/* --- Primary button --- */
-.btn-primary {
+.btn-primary {{
     width: 100%;
     padding: 0.9rem;
     margin-top: 1.5rem;
@@ -573,105 +561,103 @@ select:focus {
     cursor: pointer;
     transition: all 0.2s;
     letter-spacing: 0.01em;
-}
-.btn-primary:hover:not(:disabled) {
+}}
+.btn-primary:hover:not(:disabled) {{
     background: #5558e6;
     box-shadow: 0 4px 24px var(--accent-glow);
     transform: translateY(-1px);
-}
-.btn-primary:disabled {
+}}
+.btn-primary:disabled {{
     opacity: 0.4;
     cursor: not-allowed;
-}
+}}
 
-/* --- Progress --- */
-#progress-section { display: none; }
-#progress-section.active { display: block; }
+#progress-section {{ display: none; }}
+#progress-section.active {{ display: block; }}
 
-.progress-status {
+.progress-status {{
     display: flex;
     align-items: center;
     gap: 0.7rem;
     margin-bottom: 1rem;
-}
-.status-dot {
+}}
+.status-dot {{
     width: 10px;
     height: 10px;
     border-radius: 50%;
     background: var(--accent);
     animation: pulse 1.5s ease-in-out infinite;
     flex-shrink: 0;
-}
-.status-dot.done { background: var(--green); animation: none; }
-.status-dot.error { background: var(--red); animation: none; }
-@keyframes pulse {
-    0%, 100% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.4; transform: scale(0.8); }
-}
+}}
+.status-dot.done {{ background: var(--green); animation: none; }}
+.status-dot.error {{ background: var(--red); animation: none; }}
+@keyframes pulse {{
+    0%, 100% {{ opacity: 1; transform: scale(1); }}
+    50% {{ opacity: 0.4; transform: scale(0.8); }}
+}}
 
-.status-text {
+.status-text {{
     font-size: 0.95rem;
     color: var(--text);
-}
+}}
 
-.progress-bar-container {
+.progress-bar-container {{
     width: 100%;
     height: 4px;
     background: var(--border);
     border-radius: 2px;
     overflow: hidden;
     margin-bottom: 0.5rem;
-}
-.progress-bar {
+}}
+.progress-bar {{
     height: 100%;
     background: var(--accent);
     border-radius: 2px;
     transition: width 0.5s ease;
     width: 0%;
-}
-.progress-bar.indeterminate {
+}}
+.progress-bar.indeterminate {{
     width: 40%;
     animation: indeterminate 1.5s ease-in-out infinite;
-}
-@keyframes indeterminate {
-    0% { transform: translateX(-100%); }
-    100% { transform: translateX(350%); }
-}
+}}
+@keyframes indeterminate {{
+    0% {{ transform: translateX(-100%); }}
+    100% {{ transform: translateX(350%); }}
+}}
 
-.progress-meta {
+.progress-meta {{
     font-size: 0.78rem;
     color: var(--text-dim);
     font-family: var(--mono);
-}
+}}
 
-/* --- Results --- */
-#results-section { display: none; }
-#results-section.active { display: block; }
+#results-section {{ display: none; }}
+#results-section.active {{ display: block; }}
 
-.result-stats {
+.result-stats {{
     display: flex;
     gap: 1.5rem;
     margin-bottom: 1.5rem;
     flex-wrap: wrap;
-}
-.stat {
+}}
+.stat {{
     display: flex;
     flex-direction: column;
-}
-.stat-value {
+}}
+.stat-value {{
     font-size: 1.4rem;
     font-weight: 700;
     font-family: var(--mono);
     color: var(--accent);
-}
-.stat-label {
+}}
+.stat-label {{
     font-size: 0.72rem;
     color: var(--text-dim);
     text-transform: uppercase;
     letter-spacing: 0.08em;
-}
+}}
 
-.preview-box {
+.preview-box {{
     background: var(--bg-input);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
@@ -685,18 +671,18 @@ select:focus {
     white-space: pre-wrap;
     word-break: break-word;
     margin-bottom: 1.5rem;
-}
-.preview-box::-webkit-scrollbar { width: 6px; }
-.preview-box::-webkit-scrollbar-track { background: transparent; }
-.preview-box::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+}}
+.preview-box::-webkit-scrollbar {{ width: 6px; }}
+.preview-box::-webkit-scrollbar-track {{ background: transparent; }}
+.preview-box::-webkit-scrollbar-thumb {{ background: var(--border); border-radius: 3px; }}
 
-.download-grid {
+.download-grid {{
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
     gap: 0.8rem;
-}
+}}
 
-.btn-download {
+.btn-download {{
     padding: 0.7rem 1rem;
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
@@ -713,15 +699,14 @@ select:focus {
     align-items: center;
     justify-content: center;
     gap: 0.4rem;
-}
-.btn-download:hover {
+}}
+.btn-download:hover {{
     border-color: var(--accent);
     background: rgba(99, 102, 241, 0.06);
     color: white;
-}
+}}
 
-/* --- Donation banner --- */
-.donate-banner {
+.donate-banner {{
     background: linear-gradient(135deg, rgba(245, 158, 11, 0.08) 0%, rgba(251, 191, 36, 0.04) 100%);
     border: 1px solid rgba(245, 158, 11, 0.25);
     border-radius: var(--radius);
@@ -729,26 +714,26 @@ select:focus {
     margin-bottom: 1.5rem;
     text-align: center;
     display: none;
-}
-.donate-banner.active { display: block; }
+}}
+.donate-banner.active {{ display: block; }}
 
-.donate-banner .donate-emoji {
+.donate-banner .donate-emoji {{
     font-size: 2rem;
     margin-bottom: 0.5rem;
-}
-.donate-banner .donate-title {
+}}
+.donate-banner .donate-title {{
     font-size: 1.05rem;
     font-weight: 600;
     color: var(--text);
     margin-bottom: 0.3rem;
-}
-.donate-banner .donate-desc {
+}}
+.donate-banner .donate-desc {{
     font-size: 0.85rem;
     color: var(--text-muted);
     margin-bottom: 1rem;
     line-height: 1.5;
-}
-.btn-donate {
+}}
+.btn-donate {{
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
@@ -764,16 +749,15 @@ select:focus {
     text-decoration: none;
     transition: all 0.25s;
     box-shadow: 0 2px 12px rgba(245, 158, 11, 0.2);
-}
-.btn-donate:hover {
+}}
+.btn-donate:hover {{
     transform: translateY(-2px);
     box-shadow: 0 6px 24px rgba(245, 158, 11, 0.35);
     background: linear-gradient(135deg, #fbbf24, #f59e0b);
     color: #fff;
-}
+}}
 
-/* --- Tips --- */
-.tips {
+.tips {{
     font-size: 0.8rem;
     color: var(--text-dim);
     margin-top: 1rem;
@@ -782,33 +766,31 @@ select:focus {
     border-radius: var(--radius-sm);
     border-left: 3px solid var(--accent);
     line-height: 1.7;
-}
+}}
 
-/* --- Footer --- */
-footer {
+footer {{
     text-align: center;
     margin-top: 3rem;
     padding-top: 2rem;
     border-top: 1px solid var(--border);
     color: var(--text-dim);
     font-size: 0.8rem;
-}
-footer a {
+}}
+footer a {{
     color: var(--accent);
     text-decoration: none;
-}
-footer a:hover { text-decoration: underline; }
+}}
+footer a:hover {{ text-decoration: underline; }}
 
-/* --- Responsive --- */
-@media (max-width: 600px) {
-    .container { padding: 1rem; }
-    header h1 { font-size: 1.8rem; }
-    .card { padding: 1.4rem; }
-    .options-row { grid-template-columns: 1fr; }
-    .upload-zone { padding: 2rem 1rem; }
-    .result-stats { gap: 1rem; }
-    .donate-banner { padding: 1.2rem; }
-}
+@media (max-width: 600px) {{
+    .container {{ padding: 1rem; }}
+    header h1 {{ font-size: 1.8rem; }}
+    .card {{ padding: 1.4rem; }}
+    .options-row {{ grid-template-columns: 1fr; }}
+    .upload-zone {{ padding: 2rem 1rem; }}
+    .result-stats {{ gap: 1rem; }}
+    .donate-banner {{ padding: 1.2rem; }}
+}}
 </style>
 </head>
 <body>
@@ -820,11 +802,11 @@ footer a:hover { text-decoration: underline; }
 
     <!-- Upload -->
     <div class="card">
-        <div class="card-title">\u2460 Sube tu audio</div>
+        <div class="card-title">&#9312; Sube tu audio</div>
         <div class="upload-zone" id="upload-zone">
             <input type="file" id="file-input" accept=".mp3,.wav,.m4a,.ogg,.flac,.wma,.aac,.opus,.webm,.mp4">
-            <div class="upload-icon">\ud83c\udf99\ufe0f</div>
-            <p id="upload-text">Arrastra tu archivo aqu\u00ed o haz clic para seleccionar</p>
+            <div class="upload-icon">&#127897;&#65039;</div>
+            <p id="upload-text">Arrastra tu archivo aqu&#237; o haz clic para seleccionar</p>
             <div class="filename" id="filename" style="display:none"></div>
             <div class="fileinfo" id="fileinfo" style="display:none"></div>
         </div>
@@ -833,10 +815,10 @@ footer a:hover { text-decoration: underline; }
             <div>
                 <label class="option-label">Idioma</label>
                 <select id="language">
-                    <option value="es" selected>Espa\u00f1ol</option>
+                    <option value="es" selected>Espa&#241;ol</option>
                     <option value="en">English</option>
-                    <option value="pt">Portugu\u00eas</option>
-                    <option value="fr">Fran\u00e7ais</option>
+                    <option value="pt">Portugu&#234;s</option>
+                    <option value="fr">Fran&#231;ais</option>
                     <option value="de">Deutsch</option>
                     <option value="it">Italiano</option>
                     <option value="auto">Auto-detectar</option>
@@ -845,7 +827,7 @@ footer a:hover { text-decoration: underline; }
             <div>
                 <label class="option-label">Modelo</label>
                 <select id="model-info" disabled>
-                    <option>""" + MODEL_SIZE.capitalize() + """ (servidor)</option>
+                    <option>{model_label} (servidor)</option>
                 </select>
             </div>
         </div>
@@ -856,15 +838,15 @@ footer a:hover { text-decoration: underline; }
 
         <div class="tips">
             <strong>Formatos:</strong> MP3, WAV, M4A, OGG, FLAC, AAC, OPUS, WEBM, MP4<br>
-            <strong>Duraci\u00f3n m\u00e1xima:</strong> 2 horas 30 minutos &nbsp;\u00b7&nbsp;
-            <strong>Tama\u00f1o m\u00e1ximo:</strong> """ + str(MAX_FILE_SIZE_MB) + """MB &nbsp;\u00b7&nbsp;
+            <strong>Duraci&#243;n m&#225;xima:</strong> 2 horas 30 minutos &#183;
+            <strong>Tama&#241;o m&#225;ximo:</strong> {max_size}MB &#183;
             <strong>100% gratuito</strong>
         </div>
     </div>
 
     <!-- Progress -->
     <div class="card" id="progress-section">
-        <div class="card-title">\u2461 Procesando</div>
+        <div class="card-title">&#9313; Procesando</div>
         <div class="progress-status">
             <div class="status-dot" id="status-dot"></div>
             <span class="status-text" id="status-text">Subiendo archivo...</span>
@@ -875,30 +857,29 @@ footer a:hover { text-decoration: underline; }
         <div class="progress-meta" id="progress-meta"></div>
     </div>
 
-    <!-- Donation banner (appears after transcription completes) -->
+    <!-- Donation banner -->
     <div class="donate-banner" id="donate-banner">
-        <div class="donate-emoji">\u2615</div>
-        <div class="donate-title">\u00bfTe fue \u00fatil esta transcripci\u00f3n?</div>
+        <div class="donate-emoji">&#9749;</div>
+        <div class="donate-title">&#191;Te fue &#250;til esta transcripci&#243;n?</div>
         <div class="donate-desc">
-            TranscribeYA es gratuito y sin registro. Si te ahorr\u00f3 tiempo,
-            cons\u00eddera apoyar el proyecto para mantener el servidor activo.
+            TranscribeYA es gratuito y sin registro. Si te ahorr&#243; tiempo,
+            considera apoyar el proyecto para mantener el servidor activo.
         </div>
         <a class="btn-donate" href="https://link.mercadopago.com.mx/geobint" target="_blank" rel="noopener">
-            \u2615 Inv\u00edtame un caf\u00e9
+            &#9749; Inv&#237;tame un caf&#233;
         </a>
     </div>
 
     <!-- Results -->
     <div class="card" id="results-section">
-        <div class="card-title">\u2462 Resultado</div>
+        <div class="card-title">&#9314; Resultado</div>
         <div class="result-stats" id="result-stats"></div>
         <div class="preview-box" id="preview-box"></div>
         <div class="download-grid" id="download-grid"></div>
     </div>
 
     <footer>
-        Hecho con Whisper + FastAPI &nbsp;\u00b7&nbsp;
-        <a href="https://link.mercadopago.com.mx/geobint" target="_blank" rel="noopener">\u2615 Apoyar el proyecto</a>
+        <a href="https://link.mercadopago.com.mx/geobint" target="_blank" rel="noopener">&#9749; Apoyar el proyecto</a>
     </footer>
 </div>
 
@@ -910,36 +891,34 @@ const btn = $('btn-transcribe');
 let selectedFile = null;
 let currentJobId = null;
 
-// --- Drag & Drop ---
-zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragover'); });
+zone.addEventListener('dragover', e => {{ e.preventDefault(); zone.classList.add('dragover'); }});
 zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
-zone.addEventListener('drop', e => {
+zone.addEventListener('drop', e => {{
     e.preventDefault();
     zone.classList.remove('dragover');
-    if (e.dataTransfer.files.length) {
+    if (e.dataTransfer.files.length) {{
         fileInput.files = e.dataTransfer.files;
         handleFileSelect(e.dataTransfer.files[0]);
-    }
-});
+    }}
+}});
 
-fileInput.addEventListener('change', e => {
+fileInput.addEventListener('change', e => {{
     if (e.target.files.length) handleFileSelect(e.target.files[0]);
-});
+}});
 
-function handleFileSelect(file) {
+function handleFileSelect(file) {{
     selectedFile = file;
     zone.classList.add('has-file');
-    $('upload-text').textContent = '\u2713 Archivo seleccionado';
+    $('upload-text').textContent = '\\u2713 Archivo seleccionado';
     $('filename').textContent = file.name;
     $('filename').style.display = 'block';
     const sizeMB = (file.size / 1024 / 1024).toFixed(1);
     $('fileinfo').textContent = sizeMB + ' MB';
     $('fileinfo').style.display = 'block';
     btn.disabled = false;
-}
+}}
 
-// --- Transcribir ---
-btn.addEventListener('click', async () => {
+btn.addEventListener('click', async () => {{
     if (!selectedFile) return;
 
     btn.disabled = true;
@@ -956,45 +935,44 @@ btn.addEventListener('click', async () => {
     formData.append('file', selectedFile);
     formData.append('language', $('language').value);
 
-    try {
-        const resp = await fetch('/api/upload', { method: 'POST', body: formData });
-        if (!resp.ok) {
+    try {{
+        const resp = await fetch('/api/upload', {{ method: 'POST', body: formData }});
+        if (!resp.ok) {{
             const err = await resp.json();
             throw new Error(err.detail || 'Error al subir');
-        }
+        }}
         const data = await resp.json();
         currentJobId = data.job_id;
 
-        // Save to localStorage for recovery
-        localStorage.setItem('transcribeya_job', JSON.stringify({
+        localStorage.setItem('transcribeya_job', JSON.stringify({{
             id: currentJobId,
             filename: selectedFile.name,
             timestamp: Date.now()
-        }));
+        }}));
 
         $('status-text').textContent = 'Transcribiendo audio... esto puede tardar varios minutos';
         $('progress-meta').textContent =
-            'Duraci\u00f3n: ' + data.duration_minutes + ' min \u00b7 ' + data.file_size_mb + ' MB';
+            'Duraci\\u00f3n: ' + data.duration_minutes + ' min \\u00b7 ' + data.file_size_mb + ' MB';
 
         pollStatus();
-    } catch (err) {
-        $('status-text').textContent = '\u274c ' + err.message;
+    }} catch (err) {{
+        $('status-text').textContent = '\\u274c ' + err.message;
         $('status-dot').classList.add('error');
         $('progress-bar').classList.remove('indeterminate');
         btn.disabled = false;
         btn.textContent = 'Transcribir Audio';
-    }
-});
+    }}
+}});
 
-async function pollStatus() {
+async function pollStatus() {{
     if (!currentJobId) return;
-    try {
+    try {{
         const resp = await fetch('/api/status/' + currentJobId);
         const data = await resp.json();
 
         $('status-text').textContent = data.message;
 
-        if (data.status === 'completed') {
+        if (data.status === 'completed') {{
             $('status-dot').classList.add('done');
             $('progress-bar').classList.remove('indeterminate');
             $('progress-bar').style.width = '100%';
@@ -1002,86 +980,81 @@ async function pollStatus() {
             btn.textContent = 'Transcribir Audio';
             localStorage.removeItem('transcribeya_job');
             return;
-        }
+        }}
 
-        if (data.status === 'error') {
+        if (data.status === 'error') {{
             $('status-dot').classList.add('error');
             $('progress-bar').classList.remove('indeterminate');
             btn.disabled = false;
             btn.textContent = 'Transcribir Audio';
             localStorage.removeItem('transcribeya_job');
             return;
-        }
+        }}
 
         setTimeout(pollStatus, 2000);
-    } catch {
+    }} catch {{
         setTimeout(pollStatus, 3000);
-    }
-}
+    }}
+}}
 
-function showResults(data) {
+function showResults(data) {{
     $('results-section').classList.add('active');
     $('donate-banner').classList.add('active');
 
-    // Stats
     $('result-stats').innerHTML =
         '<div class="stat">' +
-            '<span class="stat-value">' + (data.duration_minutes || '\u2014') + '</span>' +
+            '<span class="stat-value">' + (data.duration_minutes || '\\u2014') + '</span>' +
             '<span class="stat-label">Minutos</span>' +
         '</div>' +
         '<div class="stat">' +
-            '<span class="stat-value">' + (data.total_segments || '\u2014') + '</span>' +
+            '<span class="stat-value">' + (data.total_segments || '\\u2014') + '</span>' +
             '<span class="stat-label">Segmentos</span>' +
         '</div>' +
         '<div class="stat">' +
-            '<span class="stat-value">' + ((data.detected_language || '').toUpperCase() || '\u2014') + '</span>' +
+            '<span class="stat-value">' + ((data.detected_language || '').toUpperCase() || '\\u2014') + '</span>' +
             '<span class="stat-label">Idioma</span>' +
         '</div>';
 
-    // Preview
     $('preview-box').textContent = data.preview || 'Sin vista previa disponible';
 
-    // Downloads
-    var formats = {
-        txt:       { icon: '\ud83d\udcc4', label: 'Texto + Timestamps' },
-        clean_txt: { icon: '\ud83d\udcdd', label: 'Texto Limpio' },
-        srt:       { icon: '\ud83c\udfac', label: 'Subt\u00edtulos SRT' },
-        json:      { icon: '\ud83d\udcca', label: 'JSON Detallado' }
-    };
+    var formats = {{
+        txt:       {{ icon: '&#128196;', label: 'Texto + Timestamps' }},
+        clean_txt: {{ icon: '&#128221;', label: 'Texto Limpio' }},
+        srt:       {{ icon: '&#127916;', label: 'Subt\\u00edtulos SRT' }},
+        json:      {{ icon: '&#128202;', label: 'JSON Detallado' }}
+    }};
 
     var html = '';
     var outputs = data.outputs || [];
-    for (var k = 0; k < outputs.length; k++) {
+    for (var k = 0; k < outputs.length; k++) {{
         var fmt = outputs[k];
-        var info = formats[fmt] || { icon: '\ud83d\udcce', label: fmt };
+        var info = formats[fmt] || {{ icon: '&#128206;', label: fmt }};
         html +=
             '<a class="btn-download" href="/api/download/' + currentJobId + '/' + fmt + '" download>' +
                 '<span class="dl-icon">' + info.icon + '</span>' +
                 '<span>' + info.label + '</span>' +
             '</a>';
-    }
+    }}
     $('download-grid').innerHTML = html;
-}
+}}
 
-// --- Recover job on page reload ---
-(function recoverJob() {
-    try {
+(function recoverJob() {{
+    try {{
         var saved = JSON.parse(localStorage.getItem('transcribeya_job'));
-        if (saved && saved.id && (Date.now() - saved.timestamp < 3600000)) {
+        if (saved && saved.id && (Date.now() - saved.timestamp < 3600000)) {{
             currentJobId = saved.id;
             $('progress-section').classList.add('active');
-            $('status-text').textContent = 'Reconectando con transcripci\u00f3n en curso...';
+            $('status-text').textContent = 'Reconectando con transcripci\\u00f3n en curso...';
             $('progress-meta').textContent = saved.filename || '';
             btn.disabled = true;
             btn.textContent = 'Procesando...';
             pollStatus();
-        }
-    } catch(e) {}
-})();
+        }}
+    }} catch(e) {{}}
+}})();
 </script>
 </body>
-</html>
-"""
+</html>"""
 
 
 # ---------------------------------------------------------------------------
@@ -1089,7 +1062,7 @@ function showResults(data) {
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
-    cleanup_old_files()  # Limpiar al iniciar
+    cleanup_old_files()
     port = int(os.getenv("PORT", "8000"))
     logger.info(f"Iniciando TranscribeYA en http://localhost:{port}")
     uvicorn.run(app, host="0.0.0.0", port=port)
