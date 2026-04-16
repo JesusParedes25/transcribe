@@ -1,0 +1,15 @@
+# TranscribeYA - Dependencias
+# ============================
+
+# Servidor web
+fastapi==0.115.*
+uvicorn[standard]==0.34.*
+python-multipart==0.0.*
+
+# Transcripción
+openai-whisper==20250625
+torch>=2.0
+
+# Utilidades (ya incluidas con whisper, pero explícitas)
+tqdm
+numpy

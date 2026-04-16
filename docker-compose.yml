@@ -1,0 +1,45 @@
+# docker compose up -d
+# Para GPU: docker compose --profile gpu up -d
+
+services:
+  transcribeya:
+    build:
+      context: .
+      args:
+        WHISPER_MODEL: small
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./uploads:/app/uploads
+      - ./outputs:/app/outputs
+    environment:
+      - WHISPER_MODEL=small
+      - MAX_FILE_SIZE_MB=500
+      - FREE_MINUTES_LIMIT=30
+    restart: unless-stopped
+
+  # Variante con GPU (activar con --profile gpu)
+  transcribeya-gpu:
+    build:
+      context: .
+      args:
+        WHISPER_MODEL: large
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./uploads:/app/uploads
+      - ./outputs:/app/outputs
+    environment:
+      - WHISPER_MODEL=large
+      - MAX_FILE_SIZE_MB=1000
+      - FREE_MINUTES_LIMIT=60
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+    profiles:
+      - gpu
