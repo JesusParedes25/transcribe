@@ -40,9 +40,9 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 # Límites
-MAX_FILE_SIZE_MB = int(os.getenv("MAX_FILE_SIZE_MB", "500"))
+MAX_FILE_SIZE_MB = int(os.getenv("MAX_FILE_SIZE_MB", "600"))
 MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
-FREE_MINUTES_LIMIT = int(os.getenv("FREE_MINUTES_LIMIT", "30"))  # Minutos gratis
+FREE_MINUTES_LIMIT = int(os.getenv("FREE_MINUTES_LIMIT", "150"))  # 2h30 gratis
 ALLOWED_EXTENSIONS = {".mp3", ".wav", ".m4a", ".ogg", ".flac", ".wma", ".aac", ".opus", ".webm", ".mp4"}
 
 # Modelo Whisper
@@ -392,6 +392,7 @@ FRONTEND_HTML = """
     --green: #22c55e;
     --green-glow: rgba(34, 197, 94, 0.2);
     --amber: #f59e0b;
+    --amber-glow: rgba(245, 158, 11, 0.15);
     --red: #ef4444;
     --radius: 12px;
     --radius-sm: 8px;
@@ -409,7 +410,6 @@ body {
     line-height: 1.6;
 }
 
-/* --- Fondo con gradiente sutil --- */
 body::before {
     content: '';
     position: fixed;
@@ -472,7 +472,7 @@ header p {
     margin-bottom: 1.2rem;
 }
 
-/* --- Zona de upload --- */
+/* --- Upload zone --- */
 .upload-zone {
     border: 2px dashed var(--border);
     border-radius: var(--radius);
@@ -518,7 +518,7 @@ header p {
     margin-top: 0.25rem;
 }
 
-/* --- Opciones --- */
+/* --- Options --- */
 .options-row {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -558,7 +558,7 @@ select:focus {
     box-shadow: 0 0 0 3px var(--accent-glow);
 }
 
-/* --- Botón principal --- */
+/* --- Primary button --- */
 .btn-primary {
     width: 100%;
     padding: 0.9rem;
@@ -584,7 +584,7 @@ select:focus {
     cursor: not-allowed;
 }
 
-/* --- Progreso --- */
+/* --- Progress --- */
 #progress-section { display: none; }
 #progress-section.active { display: block; }
 
@@ -600,6 +600,7 @@ select:focus {
     border-radius: 50%;
     background: var(--accent);
     animation: pulse 1.5s ease-in-out infinite;
+    flex-shrink: 0;
 }
 .status-dot.done { background: var(--green); animation: none; }
 .status-dot.error { background: var(--red); animation: none; }
@@ -643,7 +644,7 @@ select:focus {
     font-family: var(--mono);
 }
 
-/* --- Resultados --- */
+/* --- Results --- */
 #results-section { display: none; }
 #results-section.active { display: block; }
 
@@ -718,8 +719,70 @@ select:focus {
     background: rgba(99, 102, 241, 0.06);
     color: white;
 }
-.btn-download .dl-icon { font-size: 1rem; }
-.btn-download .dl-label { font-size: 0.78rem; color: var(--text-dim); }
+
+/* --- Donation banner --- */
+.donate-banner {
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.08) 0%, rgba(251, 191, 36, 0.04) 100%);
+    border: 1px solid rgba(245, 158, 11, 0.25);
+    border-radius: var(--radius);
+    padding: 1.5rem 2rem;
+    margin-bottom: 1.5rem;
+    text-align: center;
+    display: none;
+}
+.donate-banner.active { display: block; }
+
+.donate-banner .donate-emoji {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+}
+.donate-banner .donate-title {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 0.3rem;
+}
+.donate-banner .donate-desc {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin-bottom: 1rem;
+    line-height: 1.5;
+}
+.btn-donate {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.7rem 1.8rem;
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    color: #fff;
+    font-family: var(--font);
+    font-size: 0.95rem;
+    font-weight: 600;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.25s;
+    box-shadow: 0 2px 12px rgba(245, 158, 11, 0.2);
+}
+.btn-donate:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 24px rgba(245, 158, 11, 0.35);
+    background: linear-gradient(135deg, #fbbf24, #f59e0b);
+    color: #fff;
+}
+
+/* --- Tips --- */
+.tips {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    margin-top: 1rem;
+    padding: 0.8rem 1rem;
+    background: rgba(99, 102, 241, 0.04);
+    border-radius: var(--radius-sm);
+    border-left: 3px solid var(--accent);
+    line-height: 1.7;
+}
 
 /* --- Footer --- */
 footer {
@@ -736,17 +799,6 @@ footer a {
 }
 footer a:hover { text-decoration: underline; }
 
-/* --- Tips --- */
-.tips {
-    font-size: 0.8rem;
-    color: var(--text-dim);
-    margin-top: 1rem;
-    padding: 0.8rem 1rem;
-    background: rgba(99, 102, 241, 0.04);
-    border-radius: var(--radius-sm);
-    border-left: 3px solid var(--accent);
-}
-
 /* --- Responsive --- */
 @media (max-width: 600px) {
     .container { padding: 1rem; }
@@ -755,6 +807,7 @@ footer a:hover { text-decoration: underline; }
     .options-row { grid-template-columns: 1fr; }
     .upload-zone { padding: 2rem 1rem; }
     .result-stats { gap: 1rem; }
+    .donate-banner { padding: 1.2rem; }
 }
 </style>
 </head>
@@ -767,11 +820,11 @@ footer a:hover { text-decoration: underline; }
 
     <!-- Upload -->
     <div class="card">
-        <div class="card-title">① Sube tu audio</div>
+        <div class="card-title">\u2460 Sube tu audio</div>
         <div class="upload-zone" id="upload-zone">
             <input type="file" id="file-input" accept=".mp3,.wav,.m4a,.ogg,.flac,.wma,.aac,.opus,.webm,.mp4">
-            <div class="upload-icon">🎙️</div>
-            <p id="upload-text">Arrastra tu archivo aquí o haz clic para seleccionar</p>
+            <div class="upload-icon">\ud83c\udf99\ufe0f</div>
+            <p id="upload-text">Arrastra tu archivo aqu\u00ed o haz clic para seleccionar</p>
             <div class="filename" id="filename" style="display:none"></div>
             <div class="fileinfo" id="fileinfo" style="display:none"></div>
         </div>
@@ -780,10 +833,10 @@ footer a:hover { text-decoration: underline; }
             <div>
                 <label class="option-label">Idioma</label>
                 <select id="language">
-                    <option value="es" selected>Español</option>
+                    <option value="es" selected>Espa\u00f1ol</option>
                     <option value="en">English</option>
-                    <option value="pt">Português</option>
-                    <option value="fr">Français</option>
+                    <option value="pt">Portugu\u00eas</option>
+                    <option value="fr">Fran\u00e7ais</option>
                     <option value="de">Deutsch</option>
                     <option value="it">Italiano</option>
                     <option value="auto">Auto-detectar</option>
@@ -802,15 +855,16 @@ footer a:hover { text-decoration: underline; }
         </button>
 
         <div class="tips">
-            <strong>Formatos soportados:</strong> MP3, WAV, M4A, OGG, FLAC, AAC, OPUS, WEBM, MP4<br>
-            <strong>Tamaño máximo:</strong> """ + str(MAX_FILE_SIZE_MB) + """MB &nbsp;·&nbsp;
-            <strong>Gratis hasta:</strong> """ + str(FREE_MINUTES_LIMIT) + """ minutos
+            <strong>Formatos:</strong> MP3, WAV, M4A, OGG, FLAC, AAC, OPUS, WEBM, MP4<br>
+            <strong>Duraci\u00f3n m\u00e1xima:</strong> 2 horas 30 minutos &nbsp;\u00b7&nbsp;
+            <strong>Tama\u00f1o m\u00e1ximo:</strong> """ + str(MAX_FILE_SIZE_MB) + """MB &nbsp;\u00b7&nbsp;
+            <strong>100% gratuito</strong>
         </div>
     </div>
 
-    <!-- Progreso -->
+    <!-- Progress -->
     <div class="card" id="progress-section">
-        <div class="card-title">② Procesando</div>
+        <div class="card-title">\u2461 Procesando</div>
         <div class="progress-status">
             <div class="status-dot" id="status-dot"></div>
             <span class="status-text" id="status-text">Subiendo archivo...</span>
@@ -821,20 +875,30 @@ footer a:hover { text-decoration: underline; }
         <div class="progress-meta" id="progress-meta"></div>
     </div>
 
-    <!-- Resultados -->
+    <!-- Donation banner (appears after transcription completes) -->
+    <div class="donate-banner" id="donate-banner">
+        <div class="donate-emoji">\u2615</div>
+        <div class="donate-title">\u00bfTe fue \u00fatil esta transcripci\u00f3n?</div>
+        <div class="donate-desc">
+            TranscribeYA es gratuito y sin registro. Si te ahorr\u00f3 tiempo,
+            cons\u00eddera apoyar el proyecto para mantener el servidor activo.
+        </div>
+        <a class="btn-donate" href="https://link.mercadopago.com.mx/geobint" target="_blank" rel="noopener">
+            \u2615 Inv\u00edtame un caf\u00e9
+        </a>
+    </div>
+
+    <!-- Results -->
     <div class="card" id="results-section">
-        <div class="card-title">③ Resultado</div>
+        <div class="card-title">\u2462 Resultado</div>
         <div class="result-stats" id="result-stats"></div>
         <div class="preview-box" id="preview-box"></div>
         <div class="download-grid" id="download-grid"></div>
     </div>
 
     <footer>
-        Hecho con Whisper (OpenAI) + FastAPI &nbsp;·&nbsp;
-        <a href="/api/health" target="_blank">Estado del servidor</a>
-        <br><br>
-        ¿Te fue útil? &nbsp;
-        <a href="#" id="donate-link">☕ Invítame un café</a>
+        Hecho con Whisper + FastAPI &nbsp;\u00b7&nbsp;
+        <a href="https://link.mercadopago.com.mx/geobint" target="_blank" rel="noopener">\u2615 Apoyar el proyecto</a>
     </footer>
 </div>
 
@@ -865,7 +929,7 @@ fileInput.addEventListener('change', e => {
 function handleFileSelect(file) {
     selectedFile = file;
     zone.classList.add('has-file');
-    $('upload-text').textContent = '✓ Archivo seleccionado';
+    $('upload-text').textContent = '\u2713 Archivo seleccionado';
     $('filename').textContent = file.name;
     $('filename').style.display = 'block';
     const sizeMB = (file.size / 1024 / 1024).toFixed(1);
@@ -882,8 +946,11 @@ btn.addEventListener('click', async () => {
     btn.textContent = 'Subiendo...';
     $('progress-section').classList.add('active');
     $('results-section').classList.remove('active');
+    $('donate-banner').classList.remove('active');
+    $('status-dot').className = 'status-dot';
     $('status-text').textContent = 'Subiendo archivo al servidor...';
     $('progress-meta').textContent = '';
+    $('progress-bar').className = 'progress-bar indeterminate';
 
     const formData = new FormData();
     formData.append('file', selectedFile);
@@ -898,13 +965,20 @@ btn.addEventListener('click', async () => {
         const data = await resp.json();
         currentJobId = data.job_id;
 
-        $('status-text').textContent = 'Transcribiendo audio...';
+        // Save to localStorage for recovery
+        localStorage.setItem('transcribeya_job', JSON.stringify({
+            id: currentJobId,
+            filename: selectedFile.name,
+            timestamp: Date.now()
+        }));
+
+        $('status-text').textContent = 'Transcribiendo audio... esto puede tardar varios minutos';
         $('progress-meta').textContent =
-            `Duración: ${data.duration_minutes} min · ${data.file_size_mb} MB`;
+            'Duraci\u00f3n: ' + data.duration_minutes + ' min \u00b7 ' + data.file_size_mb + ' MB';
 
         pollStatus();
     } catch (err) {
-        $('status-text').textContent = '❌ ' + err.message;
+        $('status-text').textContent = '\u274c ' + err.message;
         $('status-dot').classList.add('error');
         $('progress-bar').classList.remove('indeterminate');
         btn.disabled = false;
@@ -915,7 +989,7 @@ btn.addEventListener('click', async () => {
 async function pollStatus() {
     if (!currentJobId) return;
     try {
-        const resp = await fetch(`/api/status/${currentJobId}`);
+        const resp = await fetch('/api/status/' + currentJobId);
         const data = await resp.json();
 
         $('status-text').textContent = data.message;
@@ -926,6 +1000,7 @@ async function pollStatus() {
             $('progress-bar').style.width = '100%';
             showResults(data);
             btn.textContent = 'Transcribir Audio';
+            localStorage.removeItem('transcribeya_job');
             return;
         }
 
@@ -934,6 +1009,7 @@ async function pollStatus() {
             $('progress-bar').classList.remove('indeterminate');
             btn.disabled = false;
             btn.textContent = 'Transcribir Audio';
+            localStorage.removeItem('transcribeya_job');
             return;
         }
 
@@ -945,46 +1021,63 @@ async function pollStatus() {
 
 function showResults(data) {
     $('results-section').classList.add('active');
+    $('donate-banner').classList.add('active');
 
     // Stats
-    $('result-stats').innerHTML = `
-        <div class="stat">
-            <span class="stat-value">${data.duration_minutes || '—'}</span>
-            <span class="stat-label">Minutos</span>
-        </div>
-        <div class="stat">
-            <span class="stat-value">${data.total_segments || '—'}</span>
-            <span class="stat-label">Segmentos</span>
-        </div>
-        <div class="stat">
-            <span class="stat-value">${data.detected_language?.toUpperCase() || '—'}</span>
-            <span class="stat-label">Idioma</span>
-        </div>
-    `;
+    $('result-stats').innerHTML =
+        '<div class="stat">' +
+            '<span class="stat-value">' + (data.duration_minutes || '\u2014') + '</span>' +
+            '<span class="stat-label">Minutos</span>' +
+        '</div>' +
+        '<div class="stat">' +
+            '<span class="stat-value">' + (data.total_segments || '\u2014') + '</span>' +
+            '<span class="stat-label">Segmentos</span>' +
+        '</div>' +
+        '<div class="stat">' +
+            '<span class="stat-value">' + ((data.detected_language || '').toUpperCase() || '\u2014') + '</span>' +
+            '<span class="stat-label">Idioma</span>' +
+        '</div>';
 
     // Preview
     $('preview-box').textContent = data.preview || 'Sin vista previa disponible';
 
     // Downloads
-    const formats = {
-        txt: { icon: '📄', label: 'Texto + Timestamps' },
-        clean_txt: { icon: '📝', label: 'Texto Limpio' },
-        srt: { icon: '🎬', label: 'Subtítulos SRT' },
-        json: { icon: '📊', label: 'JSON Detallado' },
+    var formats = {
+        txt:       { icon: '\ud83d\udcc4', label: 'Texto + Timestamps' },
+        clean_txt: { icon: '\ud83d\udcdd', label: 'Texto Limpio' },
+        srt:       { icon: '\ud83c\udfac', label: 'Subt\u00edtulos SRT' },
+        json:      { icon: '\ud83d\udcca', label: 'JSON Detallado' }
     };
 
-    let html = '';
-    for (const fmt of (data.outputs || [])) {
-        const info = formats[fmt] || { icon: '📎', label: fmt };
-        html += `
-            <a class="btn-download" href="/api/download/${currentJobId}/${fmt}" download>
-                <span class="dl-icon">${info.icon}</span>
-                <span>${info.label}</span>
-            </a>
-        `;
+    var html = '';
+    var outputs = data.outputs || [];
+    for (var k = 0; k < outputs.length; k++) {
+        var fmt = outputs[k];
+        var info = formats[fmt] || { icon: '\ud83d\udcce', label: fmt };
+        html +=
+            '<a class="btn-download" href="/api/download/' + currentJobId + '/' + fmt + '" download>' +
+                '<span class="dl-icon">' + info.icon + '</span>' +
+                '<span>' + info.label + '</span>' +
+            '</a>';
     }
     $('download-grid').innerHTML = html;
 }
+
+// --- Recover job on page reload ---
+(function recoverJob() {
+    try {
+        var saved = JSON.parse(localStorage.getItem('transcribeya_job'));
+        if (saved && saved.id && (Date.now() - saved.timestamp < 3600000)) {
+            currentJobId = saved.id;
+            $('progress-section').classList.add('active');
+            $('status-text').textContent = 'Reconectando con transcripci\u00f3n en curso...';
+            $('progress-meta').textContent = saved.filename || '';
+            btn.disabled = true;
+            btn.textContent = 'Procesando...';
+            pollStatus();
+        }
+    } catch(e) {}
+})();
 </script>
 </body>
 </html>
