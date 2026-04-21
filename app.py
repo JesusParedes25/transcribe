@@ -40,14 +40,16 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 # Límites
-MAX_FILE_SIZE_MB = int(os.getenv("MAX_FILE_SIZE_MB", "600"))
+MAX_FILE_SIZE_MB = int(os.getenv("MAX_FILE_SIZE_MB", "2048"))
 MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 FREE_MINUTES_LIMIT = int(os.getenv("FREE_MINUTES_LIMIT", "150"))  # 2h30 gratis
 ALLOWED_EXTENSIONS = {".mp3", ".wav", ".m4a", ".ogg", ".flac", ".wma", ".aac", ".opus", ".webm", ".mp4"}
 
-# Modelo Whisper
-MODEL_SIZE = os.getenv("WHISPER_MODEL", "small")  # tiny, base, small, medium, large
-model = None  # Se carga al iniciar
+# Modelos Whisper disponibles
+AVAILABLE_MODELS = ["tiny", "base", "small", "medium"]
+DEFAULT_MODEL = os.getenv("WHISPER_MODEL", "small")
+models = {}  # Cache de modelos cargados
+device = None  # Se establece al iniciar
 
 # Estado de trabajos en memoria (en producción usar Redis/DB)
 jobs: dict = {}
@@ -59,13 +61,27 @@ logger = logging.getLogger("transcribeya")
 # ---------------------------------------------------------------------------
 # Ciclo de vida de la app
 # ---------------------------------------------------------------------------
+def get_model(model_name: str):
+    """Obtiene un modelo de la cache o lo carga si no existe."""
+    global models, device
+    if model_name not in AVAILABLE_MODELS:
+        model_name = DEFAULT_MODEL
+    
+    if model_name not in models:
+        logger.info(f"Cargando modelo Whisper '{model_name}' en {device}...")
+        models[model_name] = whisper.load_model(model_name, device=device)
+        logger.info(f"Modelo '{model_name}' cargado exitosamente")
+    
+    return models[model_name]
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global model
+    global device
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    logger.info(f"Cargando modelo Whisper '{MODEL_SIZE}' en {device}...")
-    model = whisper.load_model(MODEL_SIZE, device=device)
-    logger.info(f"Modelo cargado exitosamente en {device}")
+    logger.info(f"Dispositivo de transcripción: {device}")
+    # Pre-cargar el modelo por defecto
+    get_model(DEFAULT_MODEL)
     yield
     logger.info("Cerrando aplicación...")
 
@@ -131,12 +147,41 @@ def cleanup_old_files(max_age_hours: int = 24):
                     f.unlink(missing_ok=True)
 
 
-def transcribe_audio(job_id: str, filepath: str, language: str, output_format: str):
+def transcribe_audio(job_id: str, filepath: str, language: str, output_format: str, model_name: str):
     """Ejecuta la transcripción de Whisper y actualiza el estado del job."""
-    global model
     try:
         jobs[job_id]["status"] = "transcribing"
+        jobs[job_id]["progress"] = 0
+        jobs[job_id]["message"] = f"Cargando modelo {model_name}..."
+        
+        # Obtener el modelo (se carga si no está en cache)
+        model = get_model(model_name)
         jobs[job_id]["message"] = "Transcribiendo audio..."
+        
+        # Iniciar hilo de progreso estimado
+        duration = jobs[job_id].get("duration", 0)
+        import threading
+        stop_progress = threading.Event()
+        
+        def update_progress():
+            """Actualiza el progreso estimado basado en velocidad del modelo."""
+            # Velocidades aproximadas (segundos de audio por segundo real)
+            speed_factors = {"tiny": 32, "base": 16, "small": 6, "medium": 2}
+            speed = speed_factors.get(model_name, 6)
+            estimated_time = duration / speed if speed > 0 else duration
+            start_time = time.time()
+            
+            while not stop_progress.is_set():
+                elapsed = time.time() - start_time
+                progress = min(95, int((elapsed / estimated_time) * 100)) if estimated_time > 0 else 0
+                jobs[job_id]["progress"] = progress
+                if progress < 95:
+                    time.sleep(0.5)
+                else:
+                    break
+        
+        progress_thread = threading.Thread(target=update_progress, daemon=True)
+        progress_thread.start()
 
         # Opciones de transcripción
         transcribe_opts = {
@@ -147,6 +192,9 @@ def transcribe_audio(job_id: str, filepath: str, language: str, output_format: s
             transcribe_opts["language"] = language
 
         result = model.transcribe(filepath, **transcribe_opts)
+        
+        # Detener hilo de progreso
+        stop_progress.set()
 
         detected_lang = result.get("language", language)
         jobs[job_id]["detected_language"] = detected_lang
@@ -184,7 +232,7 @@ def transcribe_audio(job_id: str, filepath: str, language: str, output_format: s
                 "source_file": jobs[job_id]["original_filename"],
                 "duration_seconds": jobs[job_id]["duration"],
                 "language": detected_lang,
-                "model": MODEL_SIZE,
+                "model": model_name,
                 "transcribed_at": datetime.now().isoformat(),
             },
             "segments": [
@@ -221,6 +269,7 @@ def transcribe_audio(job_id: str, filepath: str, language: str, output_format: s
 
         # Actualizar job
         jobs[job_id]["status"] = "completed"
+        jobs[job_id]["progress"] = 100
         jobs[job_id]["message"] = "Transcripción completada"
         jobs[job_id]["outputs"] = outputs
         jobs[job_id]["preview"] = txt_content[:3000]
@@ -228,11 +277,23 @@ def transcribe_audio(job_id: str, filepath: str, language: str, output_format: s
         jobs[job_id]["completed_at"] = datetime.now().isoformat()
 
         logger.info(f"Job {job_id} completado: {total_segments} segmentos")
+        
+        # Eliminar archivo de audio para ahorrar espacio
+        try:
+            Path(filepath).unlink(missing_ok=True)
+            logger.info(f"Audio eliminado: {filepath}")
+        except Exception as del_err:
+            logger.warning(f"No se pudo eliminar audio {filepath}: {del_err}")
 
     except Exception as e:
         logger.exception(f"Error en job {job_id}")
         jobs[job_id]["status"] = "error"
         jobs[job_id]["message"] = f"Error: {str(e)}"
+        # También eliminar el audio en caso de error
+        try:
+            Path(filepath).unlink(missing_ok=True)
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -243,6 +304,7 @@ async def upload_audio(
     file: UploadFile = File(...),
     language: str = Form("es"),
     output_format: str = Form("all"),
+    model: str = Form("small"),
 ):
     """Sube un archivo de audio y comienza la transcripción."""
     ext = Path(file.filename).suffix.lower()
@@ -264,10 +326,14 @@ async def upload_audio(
     duration = get_audio_duration(str(upload_path))
     duration_minutes = duration / 60
 
+    # Validar modelo seleccionado
+    selected_model = model if model in AVAILABLE_MODELS else DEFAULT_MODEL
+    
     jobs[job_id] = {
         "id": job_id,
         "status": "queued",
         "message": "En cola de procesamiento...",
+        "progress": 0,
         "original_filename": file.filename,
         "file_path": str(upload_path),
         "file_size_mb": round(total_size / (1024 * 1024), 1),
@@ -275,6 +341,7 @@ async def upload_audio(
         "duration_minutes": round(duration_minutes, 1),
         "language": language,
         "output_format": output_format,
+        "model": selected_model,
         "created_at": datetime.now().isoformat(),
         "outputs": {},
         "preview": "",
@@ -284,7 +351,7 @@ async def upload_audio(
     import threading
     thread = threading.Thread(
         target=transcribe_audio,
-        args=(job_id, str(upload_path), language, output_format),
+        args=(job_id, str(upload_path), language, output_format, selected_model),
         daemon=True,
     )
     thread.start()
@@ -308,6 +375,7 @@ async def get_status(job_id: str):
         "id": job["id"],
         "status": job["status"],
         "message": job["message"],
+        "progress": job.get("progress", 0),
         "duration_minutes": job.get("duration_minutes", 0),
         "detected_language": job.get("detected_language"),
         "total_segments": job.get("total_segments", 0),
@@ -342,7 +410,8 @@ async def health():
     """Health check."""
     return {
         "status": "ok",
-        "model": MODEL_SIZE,
+        "default_model": DEFAULT_MODEL,
+        "available_models": AVAILABLE_MODELS,
         "device": "cuda" if torch.cuda.is_available() else "cpu",
         "active_jobs": sum(1 for j in jobs.values() if j["status"] == "transcribing"),
         "total_jobs": len(jobs),
@@ -359,7 +428,6 @@ async def index():
 
 
 def _build_frontend_html() -> str:
-    model_label = MODEL_SIZE.capitalize()
     max_size = str(MAX_FILE_SIZE_MB)
     return f"""<!DOCTYPE html>
 <html lang="es">
@@ -768,6 +836,31 @@ select:focus {{
     line-height: 1.7;
 }}
 
+.model-hint {{
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    margin-top: 1rem;
+    padding: 0.7rem 1rem;
+    background: rgba(34, 197, 94, 0.06);
+    border-radius: var(--radius-sm);
+    border-left: 3px solid var(--green);
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+}}
+.model-hint .hint-icon {{
+    flex-shrink: 0;
+}}
+
+.progress-percent {{
+    font-family: var(--mono);
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--accent);
+    margin-left: auto;
+}}
+
 footer {{
     text-align: center;
     margin-top: 3rem;
@@ -826,10 +919,18 @@ footer a:hover {{ text-decoration: underline; }}
             </div>
             <div>
                 <label class="option-label">Modelo</label>
-                <select id="model-info" disabled>
-                    <option>{model_label} (servidor)</option>
+                <select id="model-select">
+                    <option value="tiny">&#9889; R&#225;pido - Ideal para pruebas r&#225;pidas</option>
+                    <option value="base">&#128640; Balanceado - Buena velocidad, calidad aceptable</option>
+                    <option value="small" selected>&#11088; Recomendado - Mejor equilibrio calidad/velocidad</option>
+                    <option value="medium">&#127942; Alta calidad - M&#225;s preciso, tarda m&#225;s</option>
                 </select>
             </div>
+        </div>
+        
+        <div class="model-hint" id="model-hint">
+            <span class="hint-icon">&#128161;</span>
+            <span id="hint-text">Equilibrio ideal entre velocidad y precisi&#243;n. Funciona bien con la mayor&#237;a de audios.</span>
         </div>
 
         <button class="btn-primary" id="btn-transcribe" disabled>
@@ -838,9 +939,9 @@ footer a:hover {{ text-decoration: underline; }}
 
         <div class="tips">
             <strong>Formatos:</strong> MP3, WAV, M4A, OGG, FLAC, AAC, OPUS, WEBM, MP4<br>
-            <strong>Duraci&#243;n m&#225;xima:</strong> 2 horas 30 minutos &#183;
-            <strong>Tama&#241;o m&#225;ximo:</strong> {max_size}MB &#183;
-            <strong>100% gratuito</strong>
+            <strong>Tama&#241;o m&#225;ximo:</strong> 2GB &#183;
+            <strong>100% gratuito</strong> &#183;
+            <strong>Totalmente an&#243;nimo</strong> (no guardamos tus audios)
         </div>
     </div>
 
@@ -850,9 +951,10 @@ footer a:hover {{ text-decoration: underline; }}
         <div class="progress-status">
             <div class="status-dot" id="status-dot"></div>
             <span class="status-text" id="status-text">Subiendo archivo...</span>
+            <span class="progress-percent" id="progress-percent"></span>
         </div>
         <div class="progress-bar-container">
-            <div class="progress-bar indeterminate" id="progress-bar"></div>
+            <div class="progress-bar" id="progress-bar"></div>
         </div>
         <div class="progress-meta" id="progress-meta"></div>
     </div>
@@ -918,6 +1020,18 @@ function handleFileSelect(file) {{
     btn.disabled = false;
 }}
 
+// Descripciones amigables para cada modelo
+const modelHints = {{
+    tiny: 'El m\u00e1s r\u00e1pido. Ideal para probar o audios muy claros. Puede tener errores en palabras dif\u00edciles.',
+    base: 'Buen balance. M\u00e1s r\u00e1pido que Small pero menos preciso. Funciona bien con audio claro.',
+    small: 'Equilibrio ideal entre velocidad y precisi\u00f3n. Funciona bien con la mayor\u00eda de audios.',
+    medium: 'Mayor precisi\u00f3n, especialmente con acentos o ruido de fondo. Tarda m\u00e1s en procesar.'
+}};
+
+$('model-select').addEventListener('change', function() {{
+    $('hint-text').textContent = modelHints[this.value] || '';
+}});
+
 btn.addEventListener('click', async () => {{
     if (!selectedFile) return;
 
@@ -929,11 +1043,14 @@ btn.addEventListener('click', async () => {{
     $('status-dot').className = 'status-dot';
     $('status-text').textContent = 'Subiendo archivo al servidor...';
     $('progress-meta').textContent = '';
-    $('progress-bar').className = 'progress-bar indeterminate';
+    $('progress-percent').textContent = '';
+    $('progress-bar').className = 'progress-bar';
+    $('progress-bar').style.width = '0%';
 
     const formData = new FormData();
     formData.append('file', selectedFile);
     formData.append('language', $('language').value);
+    formData.append('model', $('model-select').value);
 
     try {{
         const resp = await fetch('/api/upload', {{ method: 'POST', body: formData }});
@@ -971,11 +1088,16 @@ async function pollStatus() {{
         const data = await resp.json();
 
         $('status-text').textContent = data.message;
+        
+        // Actualizar barra de progreso
+        var progress = data.progress || 0;
+        $('progress-bar').style.width = progress + '%';
+        $('progress-percent').textContent = progress + '%';
 
         if (data.status === 'completed') {{
             $('status-dot').classList.add('done');
-            $('progress-bar').classList.remove('indeterminate');
             $('progress-bar').style.width = '100%';
+            $('progress-percent').textContent = '100%';
             showResults(data);
             btn.textContent = 'Transcribir Audio';
             localStorage.removeItem('transcribeya_job');
